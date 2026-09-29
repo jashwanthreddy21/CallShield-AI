@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Security Shield Outer Contour with Cyber Cyan/Blue Gradient -->
+    <path android:pathData="M54,23 L76,32 C76,52 66,69 54,77 C42,69 32,52 32,32 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="32"
+                android:startY="23"
+                android:endX="76"
+                android:endY="77"
+                android:type="linear">
+                <item android:offset="0.0" android:color="#0EA5E9" />
+                <item android:offset="1.0" android:color="#2563EB" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <!-- Inner Dark Shield Plate -->
+    <path
+        android:pathData="M54,27 L72,35 C72,50 63,65 54,72 C45,65 36,50 36,35 Z"
+        android:fillColor="#091322" />
+    <!-- Glowing AI Audio Waves / Firewall Sparks -->
+    <path
+        android:pathData="M42,48 C42,41 46,38 54,38 C62,38 66,41 66,48"
+        android:strokeColor="#38BDF8"
+        android:strokeWidth="2"
+        android:strokeLineCap="round" />
+    <!-- Phone Receiver Icon in White/Cyan -->
+    <path
+        android:pathData="M48,46 C47,46 46,47 46,48 C46,55 52,61 59,61 C60,61 61,60 61,59 L61,56 C61,55.5 60.5,55 60,54.8 L57.5,54 C57,53.8 56.5,54 56.2,54.3 L55,55.5 C53.5,54.6 52.3,53.4 51.5,51.9 L52.7,50.7 C53,50.4 53.2,49.9 53,49.4 L52.2,46.9 C52,46.4 51.5,46 51,46 Z"
+        android:fillColor="#FFFFFF" />
+    <!-- AI Core Dot -->
+    <path
+        android:pathData="M54,43 A2,2 0 1,1 53.99,43 Z"
+        android:fillColor="#38BDF8" />
+</vector>

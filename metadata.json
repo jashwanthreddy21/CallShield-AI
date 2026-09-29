@@ -1,0 +1,6 @@
+{
+  "name": "CallShield AI",
+  "description": "Intelligent mobile call-management and AI call-screening platform. Block unwanted calls, screen suspicious callers with an AI voice agent, and detect scam patterns.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
