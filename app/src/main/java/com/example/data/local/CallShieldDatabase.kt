@@ -7,19 +7,24 @@ import androidx.room.RoomDatabase
 import androidx.room.TypeConverter
 import androidx.room.TypeConverters
 import com.example.data.local.dao.AllowlistDao
+import com.example.data.local.dao.BlockedNumberDao
 import com.example.data.local.dao.CallDao
+import com.example.data.local.dao.CallHistoryLogDao
 import com.example.data.local.dao.CallerMemoryDao
 import com.example.data.local.dao.CommunityReportDao
 import com.example.data.local.dao.RuleDao
 import com.example.data.local.dao.TranscriptDao
 import com.example.data.local.entity.AllowlistEntity
+import com.example.data.local.entity.BlockedNumberEntity
 import com.example.data.local.entity.CallEntity
+import com.example.data.local.entity.CallHistoryLogEntity
 import com.example.data.local.entity.CallerMemoryEntity
 import com.example.data.local.entity.CommunityReportEntity
 import com.example.data.local.entity.RuleEntity
 import com.example.data.local.entity.TranscriptEntity
 import com.example.domain.model.CallAction
 import com.example.domain.model.CallCategory
+import com.example.domain.model.CallDirection
 import com.example.domain.model.RiskLevel
 import com.example.domain.model.RuleMatchType
 
@@ -29,6 +34,12 @@ class Converters {
 
     @TypeConverter
     fun toCallAction(value: String): CallAction = runCatching { CallAction.valueOf(value) }.getOrDefault(CallAction.ALLOW)
+
+    @TypeConverter
+    fun fromCallDirection(value: CallDirection): String = value.name
+
+    @TypeConverter
+    fun toCallDirection(value: String): CallDirection = runCatching { CallDirection.valueOf(value) }.getOrDefault(CallDirection.INCOMING)
 
     @TypeConverter
     fun fromCallCategory(value: CallCategory?): String? = value?.name
@@ -58,9 +69,11 @@ class Converters {
         AllowlistEntity::class,
         TranscriptEntity::class,
         CallerMemoryEntity::class,
-        CommunityReportEntity::class
+        CommunityReportEntity::class,
+        BlockedNumberEntity::class,
+        CallHistoryLogEntity::class
     ],
-    version = 1,
+    version = 4,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -71,6 +84,8 @@ abstract class CallShieldDatabase : RoomDatabase() {
     abstract fun transcriptDao(): TranscriptDao
     abstract fun callerMemoryDao(): CallerMemoryDao
     abstract fun communityReportDao(): CommunityReportDao
+    abstract fun blockedNumberDao(): BlockedNumberDao
+    abstract fun callHistoryLogDao(): CallHistoryLogDao
 
     companion object {
         @Volatile
@@ -83,7 +98,7 @@ abstract class CallShieldDatabase : RoomDatabase() {
                     CallShieldDatabase::class.java,
                     "callshield_database"
                 )
-                    .fallbackToDestructiveMigration()
+                    .fallbackToDestructiveMigration(true)
                     .build()
                 INSTANCE = instance
                 instance

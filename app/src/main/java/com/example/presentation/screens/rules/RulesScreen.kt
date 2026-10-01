@@ -19,12 +19,18 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material.icons.filled.PhoneCallback
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -59,6 +65,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import com.example.data.local.entity.BlockedNumberEntity
 import com.example.domain.model.CallAction
 import com.example.domain.model.CallCategory
 import com.example.domain.model.RuleMatchType
@@ -72,10 +79,14 @@ import com.example.ui.theme.CyberNavyDark
 import com.example.ui.theme.CyberNavySurface
 import com.example.ui.theme.CyberPurple
 import com.example.ui.theme.SecurityGreen
+import com.example.ui.theme.SecurityOrange
 import com.example.ui.theme.SecurityRed
 import com.example.ui.theme.TextMuted
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -86,11 +97,19 @@ fun RulesScreen(
     onAddRule: (RuleMatchType, String, CallAction, CallCategory?, Int, String) -> Unit,
     onAddToAllowlist: (String, String, String, String) -> Unit,
     onDeleteAllowlist: (Long) -> Unit,
+    onAddBlockedNumber: (String, String, String) -> Unit = { _, _, _ -> },
+    onRemoveBlockedNumber: (Long) -> Unit = {},
+    onTestInterceptor: (String, String) -> Unit = { _, _ -> },
+    onClearTestDecision: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     var selectedTab by remember { mutableIntStateOf(0) }
+    var showAddBlockedDialog by remember { mutableStateOf(false) }
     var showAddRuleDialog by remember { mutableStateOf(false) }
     var showAddAllowlistDialog by remember { mutableStateOf(false) }
+
+    var testPhoneNumberInput by remember { mutableStateOf("+1 800-555-0199") }
 
     Box(
         modifier = modifier
@@ -107,29 +126,26 @@ fun RulesScreen(
             item {
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "Protection Rules & Firewall",
+                    text = "Firewall & Security Rules",
                     color = TextPrimary,
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Bold
                 )
             }
 
-            // Metrics Summary Grid (Section 13)
+            // Metrics Summary Grid
             item {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        RuleMetricPill(title = "Active Rules", count = "12", modifier = Modifier.weight(1f))
-                        RuleMetricPill(title = "Blocked Numbers", count = "27", modifier = Modifier.weight(1f))
-                        RuleMetricPill(title = "Patterns", count = "8", modifier = Modifier.weight(1f))
-                        RuleMetricPill(title = "Allowlist", count = "${state.allowlist.size}", modifier = Modifier.weight(1f))
-                    }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    RuleMetricPill(title = "Blocked List", count = "${state.blockedNumbers.size}", modifier = Modifier.weight(1f))
+                    RuleMetricPill(title = "Active Rules", count = "${state.rules.size}", modifier = Modifier.weight(1f))
+                    RuleMetricPill(title = "Allowlist", count = "${state.allowlist.size}", modifier = Modifier.weight(1f))
                 }
             }
 
-            // Rule Precedence Card (Section 16 & 34)
+            // Precedence Info Card
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth().testTag("rule_precedence_card"),
@@ -144,7 +160,7 @@ fun RulesScreen(
                         ) {
                             Icon(imageVector = Icons.Default.Tune, contentDescription = null, tint = CyberCyan, modifier = Modifier.size(16.dp))
                             Text(
-                                text = "DETERMINISTIC RULE PRECEDENCE",
+                                text = "CALL INTERCEPTOR PRECEDENCE",
                                 color = CyberCyan,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
@@ -155,11 +171,10 @@ fun RulesScreen(
                         Spacer(modifier = Modifier.height(8.dp))
 
                         val precedenceSteps = listOf(
-                            "1. Explicit Allowlist (Bypasses all blocking rules)",
-                            "2. Specific Number Rule (Exact phone number match)",
-                            "3. Pattern Rule (Prefixes such as 91140* or 1800*)",
-                            "4. Category Rule (e.g. Telemarketing, Loans)",
-                            "5. Default Behavior (Allow / Screen policy)"
+                            "1. Trusted Allowlist (Bypasses all blocking rules)",
+                            "2. Room Blocked Numbers Table (Exact matches dropped immediately)",
+                            "3. Custom Rules & Prefix Patterns (e.g. 91140* Telemarketing)",
+                            "4. Default Firewall Behavior (Allow / AI Screening)"
                         )
 
                         precedenceSteps.forEachIndexed { idx, step ->
@@ -170,9 +185,9 @@ fun RulesScreen(
                             ) {
                                 Text(
                                     text = step,
-                                    color = if (idx == 0) SecurityGreen else TextSecondary,
+                                    color = if (idx == 0) SecurityGreen else if (idx == 1) SecurityRed else TextSecondary,
                                     fontSize = 12.sp,
-                                    fontWeight = if (idx == 0) FontWeight.Bold else FontWeight.Normal
+                                    fontWeight = if (idx <= 1) FontWeight.Bold else FontWeight.Normal
                                 )
                             }
                         }
@@ -180,7 +195,7 @@ fun RulesScreen(
                 }
             }
 
-            // Tabs: Protection Rules vs Allowlist
+            // Tabs: Blocked List vs Protection Rules vs Allowlist
             item {
                 TabRow(
                     selectedTabIndex = selectedTab,
@@ -189,7 +204,7 @@ fun RulesScreen(
                     indicator = { tabPositions ->
                         TabRowDefaults.SecondaryIndicator(
                             Modifier.tabIndicatorOffset(tabPositions[selectedTab]),
-                            color = CyberCyan
+                            color = if (selectedTab == 0) SecurityRed else if (selectedTab == 1) CyberCyan else SecurityGreen
                         )
                     },
                     modifier = Modifier.clip(RoundedCornerShape(12.dp))
@@ -197,18 +212,263 @@ fun RulesScreen(
                     Tab(
                         selected = selectedTab == 0,
                         onClick = { selectedTab = 0 },
-                        text = { Text("Protection Rules (${state.rules.size})", fontSize = 13.sp, fontWeight = FontWeight.SemiBold) }
+                        text = {
+                            Text(
+                                "Blocked List (${state.blockedNumbers.size})",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (selectedTab == 0) SecurityRed else TextSecondary
+                            )
+                        }
                     )
                     Tab(
                         selected = selectedTab == 1,
                         onClick = { selectedTab = 1 },
-                        text = { Text("Trusted Allowlist (${state.allowlist.size})", fontSize = 13.sp, fontWeight = FontWeight.SemiBold) }
+                        text = {
+                            Text(
+                                "Rules (${state.rules.size})",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (selectedTab == 1) CyberCyan else TextSecondary
+                            )
+                        }
+                    )
+                    Tab(
+                        selected = selectedTab == 2,
+                        onClick = { selectedTab = 2 },
+                        text = {
+                            Text(
+                                "Allowlist (${state.allowlist.size})",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (selectedTab == 2) SecurityGreen else TextSecondary
+                            )
+                        }
                     )
                 }
             }
 
-            // Tab 0: Protection Rules List
+            // Tab 0: Blocked List (Room Database Table & Logic Service Test)
             if (selectedTab == 0) {
+                // Interactive Interceptor Test Card
+                item {
+                    Card(
+                        modifier = Modifier.fillMaxWidth().testTag("interceptor_test_card"),
+                        colors = CardDefaults.cardColors(containerColor = CyberNavySurface),
+                        shape = RoundedCornerShape(14.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, CyberCyan.copy(alpha = 0.3f))
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Icon(imageVector = Icons.Default.PhoneCallback, contentDescription = null, tint = CyberCyan, modifier = Modifier.size(16.dp))
+                                Text(
+                                    text = "TEST INCOMING CALL INTERCEPTOR",
+                                    color = CyberCyan,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 1.sp
+                                )
+                            }
+                            Text(
+                                text = "Enter any phone number to simulate an incoming call and verify that the CallScreening logic service intercepts and checks it against the Room Blocked List table.",
+                                color = TextSecondary,
+                                fontSize = 11.sp
+                            )
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                OutlinedTextField(
+                                    value = testPhoneNumberInput,
+                                    onValueChange = { testPhoneNumberInput = it },
+                                    placeholder = { Text("Enter phone number to test", fontSize = 12.sp, color = TextMuted) },
+                                    singleLine = true,
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedContainerColor = CyberNavyCard,
+                                        unfocusedContainerColor = CyberNavyCard,
+                                        focusedBorderColor = CyberCyan,
+                                        unfocusedBorderColor = CyberNavyBorder,
+                                        focusedTextColor = TextPrimary,
+                                        unfocusedTextColor = TextPrimary
+                                    ),
+                                    modifier = Modifier.weight(1f).height(48.dp).testTag("test_interceptor_input")
+                                )
+
+                                Button(
+                                    onClick = {
+                                        if (testPhoneNumberInput.isNotBlank()) {
+                                            onTestInterceptor(testPhoneNumberInput, "Simulation Caller")
+                                        }
+                                    },
+                                    modifier = Modifier.height(48.dp).testTag("run_test_interceptor_button"),
+                                    colors = ButtonDefaults.buttonColors(containerColor = CyberCyan),
+                                    shape = RoundedCornerShape(10.dp)
+                                ) {
+                                    Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null, tint = CyberNavyDark, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Test", color = CyberNavyDark, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+
+                            // If test result exists, show decision banner
+                            state.testInterceptionDecision?.let { decision ->
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(
+                                            if (decision.isBlocked) SecurityRed.copy(alpha = 0.15f)
+                                            else if (decision.isAllowlisted) SecurityGreen.copy(alpha = 0.15f)
+                                            else CyberCyan.copy(alpha = 0.15f)
+                                        )
+                                        .padding(10.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = if (decision.isBlocked) Icons.Default.Block
+                                                    else if (decision.isAllowlisted) Icons.Default.CheckCircle
+                                                    else Icons.Default.Shield,
+                                                    contentDescription = null,
+                                                    tint = if (decision.isBlocked) SecurityRed
+                                                    else if (decision.isAllowlisted) SecurityGreen
+                                                    else CyberCyan,
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                                Text(
+                                                    text = if (decision.isBlocked) "DECISION: ⛔ REJECT & DROP CALL"
+                                                    else if (decision.isAllowlisted) "DECISION: ✓ ALLOW (TRUSTED CONTACT)"
+                                                    else "DECISION: ✓ PERMITTED (CLEAN NUMBER)",
+                                                    color = if (decision.isBlocked) SecurityRed
+                                                    else if (decision.isAllowlisted) SecurityGreen
+                                                    else CyberCyan,
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                            }
+                                            Text(
+                                                text = decision.reason,
+                                                color = TextPrimary,
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Medium
+                                            )
+                                            Text(
+                                                text = "Action: ${decision.action.name} • DisallowCall=${decision.isBlocked} • RejectCall=${decision.isBlocked}",
+                                                color = TextMuted,
+                                                fontSize = 10.sp
+                                            )
+                                        }
+
+                                        IconButton(onClick = onClearTestDecision) {
+                                            Icon(imageVector = Icons.Default.Close, contentDescription = "Clear", tint = TextMuted, modifier = Modifier.size(16.dp))
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "ROOM DATABASE 'BLOCKED_NUMBERS' TABLE",
+                            color = SecurityRed,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 1.sp
+                        )
+                        Button(
+                            onClick = { showAddBlockedDialog = true },
+                            modifier = Modifier.height(32.dp).testTag("add_blocked_button"),
+                            colors = ButtonDefaults.buttonColors(containerColor = SecurityRed.copy(alpha = 0.2f)),
+                            shape = RoundedCornerShape(8.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, SecurityRed.copy(alpha = 0.5f))
+                        ) {
+                            Icon(imageVector = Icons.Default.Add, contentDescription = null, tint = SecurityRed, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Block Number", color = SecurityRed, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+
+                if (state.blockedNumbers.isEmpty()) {
+                    item {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = CyberNavyCard),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(24.dp).fillMaxWidth(),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(imageVector = Icons.Default.Block, contentDescription = null, tint = TextMuted, modifier = Modifier.size(32.dp))
+                                Text("No blocked numbers yet", color = TextPrimary, fontWeight = FontWeight.Bold)
+                                Text("Add unwanted callers to drop them automatically.", color = TextSecondary, fontSize = 12.sp)
+                            }
+                        }
+                    }
+                } else {
+                    items(state.blockedNumbers) { blocked ->
+                        BlockedNumberCard(
+                            blocked = blocked,
+                            onUnblock = { onRemoveBlockedNumber(blocked.id) }
+                        )
+                    }
+                }
+            } else if (selectedTab == 1) {
+                // Tab 1: Protection Rules List
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "ACTIVE PATTERN & CATEGORY RULES",
+                            color = CyberCyan,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 1.sp
+                        )
+                        Button(
+                            onClick = { showAddRuleDialog = true },
+                            modifier = Modifier.height(32.dp).testTag("add_rule_header_button"),
+                            colors = ButtonDefaults.buttonColors(containerColor = CyberNavySurface),
+                            shape = RoundedCornerShape(8.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, CyberCyan.copy(alpha = 0.4f))
+                        ) {
+                            Icon(imageVector = Icons.Default.Add, contentDescription = null, tint = CyberCyan, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Add Rule", color = CyberCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+
                 items(state.rules) { rule ->
                     RuleCard(
                         rule = rule,
@@ -217,15 +477,32 @@ fun RulesScreen(
                     )
                 }
             } else {
-                // Tab 1: Smart Allowlist List (Section 16)
+                // Tab 2: Smart Allowlist List
                 item {
-                    Text(
-                        text = "TRUSTED NUMBERS BYPASS ALL BLOCKING RULES",
-                        color = SecurityGreen,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 1.sp
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "TRUSTED NUMBERS (OVERRIDE FIREWALL)",
+                            color = SecurityGreen,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 1.sp
+                        )
+                        Button(
+                            onClick = { showAddAllowlistDialog = true },
+                            modifier = Modifier.height(32.dp).testTag("add_allowlist_header_button"),
+                            colors = ButtonDefaults.buttonColors(containerColor = CyberNavySurface),
+                            shape = RoundedCornerShape(8.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, SecurityGreen.copy(alpha = 0.4f))
+                        ) {
+                            Icon(imageVector = Icons.Default.PersonAdd, contentDescription = null, tint = SecurityGreen, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Add Trusted", color = SecurityGreen, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
                 }
 
                 items(state.allowlist) { entry ->
@@ -269,9 +546,9 @@ fun RulesScreen(
 
                             IconButton(
                                 onClick = { onDeleteAllowlist(entry.id) },
-                                modifier = Modifier.size(32.dp).testTag("delete_allowlist_${entry.id}")
+                                modifier = Modifier.size(36.dp).testTag("delete_allowlist_${entry.id}")
                             ) {
-                                Icon(imageVector = Icons.Default.Delete, contentDescription = "Delete", tint = SecurityRed, modifier = Modifier.size(18.dp))
+                                Icon(imageVector = Icons.Default.Delete, contentDescription = "Delete allowlist entry", tint = SecurityRed)
                             }
                         }
                     }
@@ -286,30 +563,41 @@ fun RulesScreen(
         // Floating Action Button
         FloatingActionButton(
             onClick = {
-                if (selectedTab == 0) showAddRuleDialog = true else showAddAllowlistDialog = true
+                when (selectedTab) {
+                    0 -> showAddBlockedDialog = true
+                    1 -> showAddRuleDialog = true
+                    else -> showAddAllowlistDialog = true
+                }
             },
-            containerColor = CyberCyan,
-            contentColor = CyberNavyDark,
-            shape = RoundedCornerShape(16.dp),
             modifier = Modifier
                 .align(Alignment.BottomEnd)
-                .padding(24.dp)
-                .testTag("fab_add_rule_or_allowlist")
+                .padding(16.dp)
+                .testTag("rules_fab"),
+            containerColor = if (selectedTab == 0) SecurityRed else if (selectedTab == 1) CyberCyan else SecurityGreen,
+            contentColor = if (selectedTab == 1) CyberNavyDark else TextPrimary
         ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                Icon(imageVector = if (selectedTab == 0) Icons.Default.Add else Icons.Default.PersonAdd, contentDescription = null)
-                Text(text = if (selectedTab == 0) "Create Rule" else "Add Contact", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-            }
+            Icon(
+                imageVector = if (selectedTab == 0) Icons.Default.Block else if (selectedTab == 1) Icons.Default.Add else Icons.Default.PersonAdd,
+                contentDescription = "Add"
+            )
         }
     }
 
-    // 5-Step Create Rule Wizard Dialog (Section 14)
+    // Modal Dialog: Add Blocked Number to Room Database
+    if (showAddBlockedDialog) {
+        AddBlockedNumberDialog(
+            onDismiss = { showAddBlockedDialog = false },
+            onSave = { phone, name, reason ->
+                onAddBlockedNumber(phone, name, reason)
+                showAddBlockedDialog = false
+                Toast.makeText(context, "Added $phone to Blocked List table", Toast.LENGTH_SHORT).show()
+            }
+        )
+    }
+
+    // Modal Dialog: Add Protection Rule
     if (showAddRuleDialog) {
-        CreateRuleDialog(
+        AddRuleDialog(
             onDismiss = { showAddRuleDialog = false },
             onSave = { matchType, pattern, action, category, priority, note ->
                 onAddRule(matchType, pattern, action, category, priority, note)
@@ -318,12 +606,12 @@ fun RulesScreen(
         )
     }
 
-    // Add to Allowlist Dialog
+    // Modal Dialog: Add Trusted Contact to Allowlist
     if (showAddAllowlistDialog) {
         AddAllowlistDialog(
             onDismiss = { showAddAllowlistDialog = false },
-            onSave = { name, number, cat, notes ->
-                onAddToAllowlist(name, number, cat, notes)
+            onSave = { name, phone, cat, notes ->
+                onAddToAllowlist(name, phone, cat, notes)
                 showAddAllowlistDialog = false
             }
         )
@@ -331,143 +619,202 @@ fun RulesScreen(
 }
 
 @Composable
-private fun RuleMetricPill(title: String, count: String, modifier: Modifier = Modifier) {
+fun BlockedNumberCard(
+    blocked: BlockedNumberEntity,
+    onUnblock: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val dateFormat = SimpleDateFormat("MMM d, yyyy", Locale.getDefault())
+    val formattedDate = dateFormat.format(Date(blocked.blockedAt))
+
     Card(
-        modifier = modifier,
+        modifier = modifier
+            .fillMaxWidth()
+            .testTag("blocked_item_${blocked.id}"),
         colors = CardDefaults.cardColors(containerColor = CyberNavyCard),
-        shape = RoundedCornerShape(10.dp),
-        border = androidx.compose.foundation.BorderStroke(1.dp, CyberNavyBorder)
+        shape = RoundedCornerShape(12.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, SecurityRed.copy(alpha = 0.35f))
     ) {
-        Column(
-            modifier = Modifier.padding(8.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+        Row(
+            modifier = Modifier
+                .padding(14.dp)
+                .fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(text = count, color = CyberCyan, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-            Text(text = title, color = TextMuted, fontSize = 10.sp, maxLines = 1)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.weight(1f)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(38.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(SecurityRed.copy(alpha = 0.15f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(imageVector = Icons.Default.Block, contentDescription = null, tint = SecurityRed, modifier = Modifier.size(20.dp))
+                }
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = blocked.phoneNumber,
+                            color = TextPrimary,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        if (blocked.blockCount > 0) {
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(SecurityRed.copy(alpha = 0.2f))
+                                    .padding(horizontal = 5.dp, vertical = 1.dp)
+                            ) {
+                                Text(
+                                    text = "Dropped ${blocked.blockCount}x",
+                                    color = SecurityRed,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+
+                    if (blocked.callerName.isNotBlank()) {
+                        Text(text = blocked.callerName, color = TextSecondary, fontSize = 12.sp)
+                    }
+
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "Reason: ${blocked.reason} • Added $formattedDate",
+                        color = TextMuted,
+                        fontSize = 11.sp
+                    )
+                }
+            }
+
+            Button(
+                onClick = onUnblock,
+                colors = ButtonDefaults.buttonColors(containerColor = CyberNavySurface),
+                shape = RoundedCornerShape(8.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, CyberNavyBorder),
+                modifier = Modifier.height(34.dp).testTag("unblock_${blocked.id}")
+            ) {
+                Text("Unblock", color = TextSecondary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+            }
         }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CreateRuleDialog(
+fun AddBlockedNumberDialog(
     onDismiss: () -> Unit,
-    onSave: (RuleMatchType, String, CallAction, CallCategory?, Int, String) -> Unit
+    onSave: (String, String, String) -> Unit
 ) {
-    var matchType by remember { mutableStateOf(RuleMatchType.PATTERN) }
-    var patternValue by remember { mutableStateOf("91140*") }
-    var selectedAction by remember { mutableStateOf(CallAction.AI_SCREEN) }
-    var selectedCategory by remember { mutableStateOf(CallCategory.TELEMARKETING) }
-    var priority by remember { mutableIntStateOf(8) }
-    var note by remember { mutableStateOf("Telemarketing prefix firewall") }
+    var phoneNumber by remember { mutableStateOf("") }
+    var callerName by remember { mutableStateOf("") }
+    var reason by remember { mutableStateOf("Spam & Robocall") }
+
+    val quickReasons = listOf("Spam & Robocall", "Phishing Scam", "Harassment", "Telemarketing", "Fake Bank / OTP")
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
-            modifier = Modifier.fillMaxWidth().testTag("create_rule_dialog"),
+            modifier = Modifier.fillMaxWidth().testTag("add_blocked_dialog"),
             colors = CardDefaults.cardColors(containerColor = CyberNavyCard),
             shape = RoundedCornerShape(18.dp),
-            border = androidx.compose.foundation.BorderStroke(1.dp, CyberCyan.copy(alpha = 0.4f))
+            border = androidx.compose.foundation.BorderStroke(1.dp, SecurityRed.copy(alpha = 0.5f))
         ) {
             Column(
                 modifier = Modifier.padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Text(
-                    text = "CREATE PROTECTION RULE",
-                    color = CyberCyan,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.sp
-                )
-
-                // Step 1: Match Type
-                Text(text = "1. Match Type", color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    RuleMatchType.values().take(3).forEach { type ->
-                        Button(
-                            onClick = { matchType = type },
-                            modifier = Modifier.weight(1f).height(36.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = if (matchType == type) CyberCyan else CyberNavySurface
-                            ),
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Text(
-                                text = type.displayName.take(12),
-                                color = if (matchType == type) CyberNavyDark else TextPrimary,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
+                    Icon(imageVector = Icons.Default.Block, contentDescription = null, tint = SecurityRed, modifier = Modifier.size(18.dp))
+                    Text(
+                        text = "ADD TO BLOCKED LIST",
+                        color = SecurityRed,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.sp
+                    )
                 }
 
-                // Step 2: Value / Pattern
-                Text(text = "2. Pattern / Value ('*' matches wildcard prefix)", color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                Text(
+                    text = "Calls from this number will be intercepted by CallShield and dropped immediately.",
+                    color = TextSecondary,
+                    fontSize = 12.sp
+                )
+
                 OutlinedTextField(
-                    value = patternValue,
-                    onValueChange = { patternValue = it },
-                    placeholder = { Text("e.g. 91140*, +9191140*, 1800*", color = TextMuted) },
+                    value = phoneNumber,
+                    onValueChange = { phoneNumber = it },
+                    label = { Text("Phone Number (e.g. +1 800-555-0199)", color = TextMuted) },
                     singleLine = true,
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = CyberNavySurface,
-                        unfocusedContainerColor = CyberNavySurface,
-                        focusedBorderColor = CyberCyan,
+                        focusedBorderColor = SecurityRed,
                         unfocusedBorderColor = CyberNavyBorder,
                         focusedTextColor = TextPrimary,
                         unfocusedTextColor = TextPrimary
                     ),
-                    modifier = Modifier.fillMaxWidth().testTag("rule_pattern_input")
+                    modifier = Modifier.fillMaxWidth().testTag("blocked_phone_input")
                 )
 
-                // Step 3: Action
-                Text(text = "3. Action When Matched", color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                OutlinedTextField(
+                    value = callerName,
+                    onValueChange = { callerName = it },
+                    label = { Text("Caller Name / Organization (optional)", color = TextMuted) },
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = SecurityRed,
+                        unfocusedBorderColor = CyberNavyBorder,
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary
+                    ),
+                    modifier = Modifier.fillMaxWidth().testTag("blocked_name_input")
+                )
+
+                Text(text = "Reason for Blocking", color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+
+                OutlinedTextField(
+                    value = reason,
+                    onValueChange = { reason = it },
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = SecurityRed,
+                        unfocusedBorderColor = CyberNavyBorder,
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary
+                    ),
+                    modifier = Modifier.fillMaxWidth().testTag("blocked_reason_input")
+                )
+
+                // Quick reason chips
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    listOf(CallAction.AI_SCREEN, CallAction.BLOCK, CallAction.SILENCE, CallAction.ALLOW).forEach { act ->
+                    quickReasons.take(3).forEach { r ->
                         Button(
-                            onClick = { selectedAction = act },
-                            modifier = Modifier.weight(1f).height(36.dp),
+                            onClick = { reason = r },
+                            modifier = Modifier.weight(1f).height(30.dp),
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = if (selectedAction == act) CyberCyan else CyberNavySurface
+                                containerColor = if (reason == r) SecurityRed else CyberNavySurface
                             ),
-                            shape = RoundedCornerShape(8.dp)
+                            shape = RoundedCornerShape(6.dp)
                         ) {
-                            Text(
-                                text = act.displayName,
-                                color = if (selectedAction == act) CyberNavyDark else TextPrimary,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold
-                            )
+                            Text(r.take(12), color = if (reason == r) TextPrimary else TextSecondary, fontSize = 9.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
 
-                // Step 4 & 5: Rule Preview Card (Section 14)
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(CyberNavySurface)
-                        .padding(10.dp)
-                ) {
-                    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                        Text(text = "RULE PREVIEW", color = CyberPurple, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                        Text(
-                            text = "IF number matches: $patternValue\nTHEN perform action: ${selectedAction.displayName}",
-                            color = TextPrimary,
-                            fontSize = 12.sp,
-                            fontFamily = FontFamily.Monospace
-                        )
-                    }
-                }
+                Spacer(modifier = Modifier.height(6.dp))
 
-                // Buttons
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -483,8 +830,143 @@ fun CreateRuleDialog(
 
                     Button(
                         onClick = {
-                            if (patternValue.isNotBlank()) {
-                                onSave(matchType, patternValue, selectedAction, selectedCategory, priority, note)
+                            if (phoneNumber.isNotBlank()) {
+                                onSave(phoneNumber, callerName, reason)
+                            }
+                        },
+                        modifier = Modifier.weight(1f).height(44.dp).testTag("save_blocked_button"),
+                        colors = ButtonDefaults.buttonColors(containerColor = SecurityRed),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text("Block Number", color = TextPrimary, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun RuleMetricPill(title: String, count: String, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(10.dp))
+            .background(CyberNavyCard)
+            .padding(10.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(text = count, color = CyberCyan, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            Text(text = title, color = TextMuted, fontSize = 10.sp)
+        }
+    }
+}
+
+@Composable
+fun AddRuleDialog(
+    onDismiss: () -> Unit,
+    onSave: (RuleMatchType, String, CallAction, CallCategory?, Int, String) -> Unit
+) {
+    var matchType by remember { mutableStateOf(RuleMatchType.PATTERN) }
+    var pattern by remember { mutableStateOf("") }
+    var action by remember { mutableStateOf(CallAction.BLOCK) }
+    var category by remember { mutableStateOf<CallCategory?>(CallCategory.TELEMARKETING) }
+    var priority by remember { mutableIntStateOf(5) }
+    var note by remember { mutableStateOf("") }
+
+    val matchTypes = listOf(RuleMatchType.PATTERN, RuleMatchType.EXACT_NUMBER, RuleMatchType.CATEGORY)
+    val actions = listOf(CallAction.BLOCK, CallAction.AI_SCREEN, CallAction.SILENCE, CallAction.ALLOW)
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            modifier = Modifier.fillMaxWidth().testTag("add_rule_dialog"),
+            colors = CardDefaults.cardColors(containerColor = CyberNavyCard),
+            shape = RoundedCornerShape(18.dp),
+            border = androidx.compose.foundation.BorderStroke(1.dp, CyberCyan.copy(alpha = 0.4f))
+        ) {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text(
+                    text = "CREATE PROTECTION RULE",
+                    color = CyberCyan,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.sp
+                )
+
+                Text(text = "Rule Type", color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    matchTypes.forEach { mt ->
+                        Button(
+                            onClick = { matchType = mt },
+                            modifier = Modifier.weight(1f).height(32.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (matchType == mt) CyberCyan else CyberNavySurface
+                            ),
+                            shape = RoundedCornerShape(6.dp)
+                        ) {
+                            Text(mt.displayName.take(8), color = if (matchType == mt) CyberNavyDark else TextPrimary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+
+                OutlinedTextField(
+                    value = pattern,
+                    onValueChange = { pattern = it },
+                    label = { Text("Pattern / Number (e.g. 91140* or +1 800-*)", color = TextMuted) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().testTag("rule_pattern_input")
+                )
+
+                Text(text = "Action", color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    actions.forEach { act ->
+                        Button(
+                            onClick = { action = act },
+                            modifier = Modifier.weight(1f).height(32.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (action == act) CyberCyan else CyberNavySurface
+                            ),
+                            shape = RoundedCornerShape(6.dp)
+                        ) {
+                            Text(act.displayName, color = if (action == act) CyberNavyDark else TextPrimary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+
+                OutlinedTextField(
+                    value = note,
+                    onValueChange = { note = it },
+                    label = { Text("Note / Description (Optional)", color = TextMuted) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().testTag("rule_note_input")
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = onDismiss,
+                        modifier = Modifier.weight(1f).height(44.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = CyberNavySurface),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text("Cancel", color = TextSecondary)
+                    }
+
+                    Button(
+                        onClick = {
+                            if (pattern.isNotBlank()) {
+                                onSave(matchType, pattern, action, category, priority, note)
                             }
                         },
                         modifier = Modifier.weight(1f).height(44.dp).testTag("save_rule_button"),

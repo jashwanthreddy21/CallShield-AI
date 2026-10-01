@@ -125,4 +125,11 @@ class CallShieldEngineTest {
             assertTrue("Screen route must not be blank", screen.route.isNotBlank())
         }
     }
+
+    @Test
+    fun testCallDirection_allValuesHaveDisplayNames() {
+        com.example.domain.model.CallDirection.values().forEach { dir ->
+            assertTrue(dir.displayName.isNotBlank())
+        }
+    }
 }

@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.PrivacyTip
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -68,6 +69,8 @@ fun SettingsScreen(
     onToggleAIMemory: (Boolean) -> Unit,
     onClearCallHistory: () -> Unit,
     onClearAIMemory: () -> Unit,
+    onShareApk: () -> Unit = {},
+    onExportCsv: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -263,6 +266,93 @@ fun SettingsScreen(
                     SecurityStatusRow("CallScreening API", "Android Telecom CallScreeningService Active")
                     SecurityStatusRow("Telephony Provider", "VoIP / SIP Abstraction Layer Active")
                     SecurityStatusRow("Data Residency", "Zero-cloud transit by default")
+                }
+            }
+        }
+
+        // Standalone Direct APK Sharing & Export (No Play Console needed!)
+        item {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("apk_share_card"),
+                colors = CardDefaults.cardColors(containerColor = CyberNavyCard),
+                shape = RoundedCornerShape(16.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, CyberCyan.copy(alpha = 0.5f))
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(imageVector = Icons.Default.Share, contentDescription = null, tint = CyberCyan, modifier = Modifier.size(18.dp))
+                        Text(
+                            text = "DIRECT APK SHARING (NO PLAY CONSOLE)",
+                            color = CyberCyan,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 1.sp
+                        )
+                    }
+
+                    Text(
+                        text = "You don't need a Google Play Console account! You can share the standalone CallShield APK directly to friends, family, or other devices through WhatsApp, Telegram, Google Drive, Email, or Bluetooth.",
+                        color = TextPrimary,
+                        fontSize = 13.sp,
+                        lineHeight = 18.sp
+                    )
+
+                    // 3-step sideloading guide
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(CyberNavySurface)
+                            .padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text("How to Install on Any Phone:", color = CyberCyan, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text("1. Tap 'Share App APK' below and send via WhatsApp / Drive / Nearby Share", color = TextSecondary, fontSize = 11.sp)
+                        Text("2. On the other phone, tap the received APK file and enable 'Install Unknown Apps'", color = TextSecondary, fontSize = 11.sp)
+                        Text("3. Open CallShield AI and set as default spam screening app!", color = TextSecondary, fontSize = 11.sp)
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = onShareApk,
+                            modifier = Modifier
+                                .weight(1.2f)
+                                .height(44.dp)
+                                .testTag("share_apk_direct_button"),
+                            colors = ButtonDefaults.buttonColors(containerColor = CyberCyan),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Icon(imageVector = Icons.Default.Share, contentDescription = null, tint = CyberNavyDark, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Share App APK", color = CyberNavyDark, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        Button(
+                            onClick = onExportCsv,
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(44.dp)
+                                .testTag("export_logs_button"),
+                            colors = ButtonDefaults.buttonColors(containerColor = CyberNavySurface),
+                            shape = RoundedCornerShape(10.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, CyberNavyBorder)
+                        ) {
+                            Icon(imageVector = Icons.Default.Download, contentDescription = null, tint = TextPrimary, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Export Logs", color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
                 }
             }
         }

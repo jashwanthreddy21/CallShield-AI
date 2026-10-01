@@ -24,6 +24,14 @@ enum class RiskLevel(val displayName: String) {
     HIGH("High")
 }
 
+enum class CallDirection(val displayName: String) {
+    INCOMING("Incoming"),
+    OUTGOING("Outgoing"),
+    MISSED("Missed"),
+    BLOCKED("Blocked"),
+    AI_SCREENED("AI Screened")
+}
+
 enum class RuleMatchType(val displayName: String) {
     EXACT_NUMBER("Phone Number"),
     PATTERN("Number Pattern"),
@@ -44,6 +52,17 @@ data class ScamIndicator(
     val title: String,
     val description: String,
     val severity: RiskLevel
+)
+
+data class CallThreatInspectionResult(
+    val phoneNumber: String,
+    val threatScore: Int,
+    val riskLevel: RiskLevel,
+    val matchedRuleName: String? = null,
+    val isAllowlisted: Boolean = false,
+    val communityReportCount: Int = 0,
+    val detectedKeywords: List<String> = emptyList(),
+    val recommendation: String = ""
 )
 
 data class RuleEvaluationResult(

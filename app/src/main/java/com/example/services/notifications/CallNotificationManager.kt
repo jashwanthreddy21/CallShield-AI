@@ -122,4 +122,53 @@ object CallNotificationManager {
             NotificationManagerCompat.from(context).notify(caller.hashCode() + 2, notification)
         }
     }
+
+    /**
+     * Triggers an urgent, real-time alert notification when Gemini API
+     * identifies high-risk scam patterns during or immediately after call screening.
+     */
+    fun notifyHighRiskScamAlert(
+        context: Context,
+        phoneNumber: String,
+        callerName: String,
+        headline: String,
+        scamCategory: String,
+        indicators: List<String>,
+        threatScore: Int
+    ) {
+        val intent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+            putExtra("EXTRA_NAVIGATE_TO", "CALLS")
+            putExtra("EXTRA_CALLER_PHONE", phoneNumber)
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            context,
+            3,
+            intent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        val callerDisplay = if (callerName.isNotBlank()) "$callerName ($phoneNumber)" else phoneNumber
+        val indicatorsText = if (indicators.isNotEmpty()) {
+            "\nScam Indicators:\n• " + indicators.joinToString("\n• ")
+        } else ""
+
+        val fullText = "$headline\n\nCaller: $callerDisplay\nCategory: $scamCategory\nThreat Score: $threatScore/100$indicatorsText\n\nAction: Immediate block recommended."
+
+        val notification = NotificationCompat.Builder(context, CHANNEL_RISK_ALERTS)
+            .setSmallIcon(android.R.drawable.stat_sys_warning)
+            .setContentTitle("🚨 CRITICAL SCAM DETECTED: $scamCategory")
+            .setContentText("$headline ($callerDisplay)")
+            .setStyle(NotificationCompat.BigTextStyle().bigText(fullText))
+            .setPriority(NotificationCompat.PRIORITY_MAX)
+            .setCategory(NotificationCompat.CATEGORY_ALARM)
+            .setVibrate(longArrayOf(0, 300, 200, 300, 200, 500))
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true)
+            .build()
+
+        runCatching {
+            NotificationManagerCompat.from(context).notify(phoneNumber.hashCode() + 99, notification)
+        }
+    }
 }

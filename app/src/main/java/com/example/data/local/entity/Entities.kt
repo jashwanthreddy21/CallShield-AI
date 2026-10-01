@@ -4,6 +4,7 @@ import androidx.room.Entity
 import androidx.room.PrimaryKey
 import com.example.domain.model.CallAction
 import com.example.domain.model.CallCategory
+import com.example.domain.model.CallDirection
 import com.example.domain.model.RiskLevel
 import com.example.domain.model.RuleMatchType
 
@@ -17,6 +18,8 @@ data class CallEntity(
     val action: CallAction,
     val category: CallCategory,
     val riskLevel: RiskLevel,
+    val direction: CallDirection = CallDirection.INCOMING,
+    val threatScore: Int = 15,
     val confidenceScore: Float = 0.85f,
     val purpose: String = "",
     val summary: String = "",
@@ -77,4 +80,14 @@ data class CommunityReportEntity(
     val reportCount: Int = 1,
     val topTags: String = "",
     val reportedAt: Long = System.currentTimeMillis()
+)
+
+@Entity(tableName = "blocked_numbers")
+data class BlockedNumberEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val phoneNumber: String,
+    val callerName: String = "",
+    val reason: String = "Blocked by user",
+    val blockedAt: Long = System.currentTimeMillis(),
+    val blockCount: Int = 0
 )

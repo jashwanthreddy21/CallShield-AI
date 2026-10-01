@@ -3,6 +3,8 @@ package com.example.presentation.screens.calls
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -23,6 +25,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Block
+import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
@@ -31,11 +34,13 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -61,10 +66,14 @@ import com.example.domain.model.CallCategory
 import com.example.domain.model.RiskLevel
 import com.example.domain.model.RuleMatchType
 import com.example.presentation.components.ActionBadge
+import com.example.presentation.components.AudioPlayerCard
 import com.example.presentation.components.CategoryBadge
+import com.example.presentation.components.DirectionBadge
 import com.example.presentation.components.RiskBadge
+import com.example.presentation.components.ThreatScoreGauge
 import com.example.presentation.components.TranscriptBubble
 import com.example.presentation.viewmodel.CallShieldViewModel
+import com.example.services.ai.ScreeningDialogueTurn
 import com.example.ui.theme.CyberCyan
 import com.example.ui.theme.CyberNavyBorder
 import com.example.ui.theme.CyberNavyCard
@@ -118,6 +127,30 @@ fun CallDetailScreen(
                     }
                 },
                 actions = {
+                    IconButton(
+                        onClick = {
+                            val auditReport = """
+                                CALLSHIELD AI INCIDENT SECURITY AUDIT
+                                Caller: ${call.callerName} (${call.phoneNumber})
+                                Direction: ${call.direction.displayName}
+                                Action Taken: ${call.action.displayName}
+                                AI Category: ${call.category.displayName}
+                                Risk Assessment: ${call.riskLevel.displayName} (Threat Score: ${call.threatScore}/100)
+                                Purpose: ${call.purpose}
+                                Summary: ${call.summary}
+                                Timestamp: $formattedDate
+                            """.trimIndent()
+                            val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_TEXT, auditReport)
+                            }
+                            context.startActivity(Intent.createChooser(sendIntent, "Share CallShield Audit"))
+                        },
+                        modifier = Modifier.testTag("share_audit_button")
+                    ) {
+                        Icon(imageVector = Icons.Default.Share, contentDescription = "Share", tint = CyberCyan)
+                    }
+
                     IconButton(
                         onClick = {
                             viewModel.deleteCall(call.id)
@@ -175,21 +208,47 @@ fun CallDetailScreen(
                             ActionBadge(action = call.action)
                         }
 
-                        Spacer(modifier = Modifier.height(12.dp))
+                        Spacer(modifier = Modifier.height(10.dp))
 
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(text = formattedDate, color = TextMuted, fontSize = 12.sp)
-                            Text(
-                                text = "Duration: ${call.durationSeconds}s",
-                                color = TextMuted,
-                                fontSize = 12.sp
-                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                DirectionBadge(direction = call.direction)
+                                Text(text = formattedDate, color = TextMuted, fontSize = 12.sp)
+                            }
+
+                            // Quick Call Back Button
+                            Button(
+                                onClick = {
+                                    val dialIntent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:${call.phoneNumber}"))
+                                    context.startActivity(dialIntent)
+                                },
+                                modifier = Modifier.height(34.dp).testTag("call_back_button"),
+                                colors = ButtonDefaults.buttonColors(containerColor = SecurityGreen.copy(alpha = 0.2f)),
+                                shape = RoundedCornerShape(8.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, SecurityGreen.copy(alpha = 0.4f))
+                            ) {
+                                Icon(imageVector = Icons.Default.Call, contentDescription = null, tint = SecurityGreen, modifier = Modifier.size(14.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Call Back", color = SecurityGreen, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
                         }
                     }
                 }
+            }
+
+            // Threat Score Index Gauge Card
+            item {
+                ThreatScoreGauge(
+                    score = call.threatScore,
+                    riskLevel = call.riskLevel
+                )
             }
 
             // AI Classification & Risk Assessment Card
@@ -449,6 +508,16 @@ fun CallDetailScreen(
                     ) {
                         Text("Report", color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     }
+                }
+            }
+
+            // AI Call Audio Player
+            if (call.hasTranscript || call.action == CallAction.AI_SCREEN || call.durationSeconds > 0) {
+                item {
+                    AudioPlayerCard(
+                        callerName = call.callerName.ifEmpty { "CallShield AI Screened Voice" },
+                        durationSeconds = if (call.durationSeconds > 0) call.durationSeconds else 42
+                    )
                 }
             }
 

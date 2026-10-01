@@ -32,6 +32,38 @@ class CallScreeningServiceImpl : CallScreeningService() {
         serviceScope.launch {
             try {
                 val db = CallShieldDatabase.getDatabase(applicationContext)
+
+                // 1. Logic Service: Intercept call and compare against Room Blocked List table
+                val interceptor = BlockedCallInterceptor(db)
+                val blockedDecision = interceptor.interceptCall(
+                    incomingNumber = incomingHandle,
+                    shouldLogCall = true,
+                    notifyUser = true,
+                    context = applicationContext
+                )
+
+                val responseBuilder = CallResponse.Builder()
+
+                if (blockedDecision.isBlocked) {
+                    Log.w(TAG, "Incoming call $incomingHandle blocked by Blocked List Room database table!")
+                    responseBuilder.setDisallowCall(true)
+                    responseBuilder.setRejectCall(true)
+                    responseBuilder.setSkipNotification(false)
+                    responseBuilder.setSkipCallLog(false)
+                    respondToCall(callDetails, responseBuilder.build())
+                    return@launch
+                }
+
+                if (blockedDecision.isAllowlisted) {
+                    Log.d(TAG, "Incoming call $incomingHandle allowed via Trusted Allowlist")
+                    responseBuilder.setDisallowCall(false)
+                    responseBuilder.setSilenceCall(false)
+                    responseBuilder.setSkipNotification(false)
+                    respondToCall(callDetails, responseBuilder.build())
+                    return@launch
+                }
+
+                // 2. Evaluate remaining pattern and category rules
                 val allowlist = db.allowlistDao().getAllAllowlistSync()
                 val rules = db.ruleDao().getActiveRulesSync()
 
@@ -42,8 +74,6 @@ class CallScreeningServiceImpl : CallScreeningService() {
                     activeRules = rules,
                     defaultAction = CallAction.ALLOW
                 )
-
-                val responseBuilder = CallResponse.Builder()
 
                 when (result.action) {
                     CallAction.BLOCK -> {
@@ -56,7 +86,7 @@ class CallScreeningServiceImpl : CallScreeningService() {
                         }
 
                         // Save call record
-                        val callId = db.callDao().insertCall(
+                        db.callDao().insertCall(
                             CallEntity(
                                 phoneNumber = incomingHandle,
                                 callerName = "Blocked Caller",

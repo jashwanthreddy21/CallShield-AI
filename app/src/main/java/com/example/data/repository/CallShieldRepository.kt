@@ -3,16 +3,21 @@ package com.example.data.repository
 import android.content.Context
 import com.example.data.local.CallShieldDatabase
 import com.example.data.local.entity.AllowlistEntity
+import com.example.data.local.entity.BlockedNumberEntity
 import com.example.data.local.entity.CallEntity
+import com.example.data.local.entity.CallHistoryLogEntity
 import com.example.data.local.entity.CallerMemoryEntity
 import com.example.data.local.entity.CommunityReportEntity
 import com.example.data.local.entity.RuleEntity
 import com.example.data.local.entity.TranscriptEntity
 import com.example.domain.model.CallAction
 import com.example.domain.model.CallCategory
+import com.example.domain.model.CallDirection
 import com.example.domain.model.RiskLevel
 import com.example.domain.model.RuleMatchType
 import com.example.services.ai.AIPersonality
+import com.example.services.call.BlockedCallInterceptor
+import com.example.services.call.InterceptionDecision
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -33,6 +38,9 @@ class CallShieldRepository(
     private val transcriptDao = database.transcriptDao()
     private val callerMemoryDao = database.callerMemoryDao()
     private val communityReportDao = database.communityReportDao()
+    private val blockedNumberDao = database.blockedNumberDao()
+    private val callHistoryLogDao = database.callHistoryLogDao()
+    private val blockedCallInterceptor = BlockedCallInterceptor(database)
 
     // Protection and AI Preferences
     private val _isShieldEnabled = MutableStateFlow(true)
@@ -65,11 +73,19 @@ class CallShieldRepository(
     val allAllowlist: Flow<List<AllowlistEntity>> = allowlistDao.getAllAllowlist()
     val allMemories: Flow<List<CallerMemoryEntity>> = callerMemoryDao.getAllMemories()
     val allCommunityReports: Flow<List<CommunityReportEntity>> = communityReportDao.getAllReports()
+    val allBlockedNumbers: Flow<List<BlockedNumberEntity>> = blockedNumberDao.getAllBlockedNumbers()
+    val allHistoryLogs: Flow<List<CallHistoryLogEntity>> = callHistoryLogDao.getAllHistoryLogs()
 
     fun getCallById(id: Long): Flow<CallEntity?> = callDao.getCallById(id)
     fun getTranscriptsForCall(callId: Long): Flow<List<TranscriptEntity>> = transcriptDao.getTranscriptsForCall(callId)
     fun getCallerMemory(phone: String): Flow<CallerMemoryEntity?> = callerMemoryDao.getMemoryForNumber(phone)
     fun getCommunityReport(phone: String): Flow<CommunityReportEntity?> = communityReportDao.getReportForNumber(phone)
+    fun getBlockedNumber(phone: String): Flow<BlockedNumberEntity?> = blockedNumberDao.getBlockedNumber(phone)
+    fun getRecentHistoryLogs(limit: Int = 20): Flow<List<CallHistoryLogEntity>> = callHistoryLogDao.getRecentHistoryLogs(limit)
+    fun searchCallHistoryLogs(query: String): Flow<List<CallHistoryLogEntity>> = callHistoryLogDao.searchLogs(query)
+    suspend fun insertCallHistoryLog(log: CallHistoryLogEntity): Long = callHistoryLogDao.insertLog(log)
+    suspend fun deleteCallHistoryLog(id: Long) = callHistoryLogDao.deleteLogById(id)
+    suspend fun clearAllCallHistoryLogs() = callHistoryLogDao.clearAllHistoryLogs()
 
     init {
         CoroutineScope(Dispatchers.IO).launch {
@@ -107,6 +123,10 @@ class CallShieldRepository(
 
     suspend fun insertCall(call: CallEntity): Long = withContext(Dispatchers.IO) {
         callDao.insertCall(call)
+    }
+
+    suspend fun insertCalls(calls: List<CallEntity>) = withContext(Dispatchers.IO) {
+        callDao.insertAllCalls(calls)
     }
 
     suspend fun insertTranscripts(transcripts: List<TranscriptEntity>) = withContext(Dispatchers.IO) {
@@ -176,6 +196,60 @@ class CallShieldRepository(
                 )
             )
         }
+    }
+
+    suspend fun addBlockedNumber(
+        phoneNumber: String,
+        callerName: String = "",
+        reason: String = "Blocked by user"
+    ): Long = withContext(Dispatchers.IO) {
+        val cleanPhone = phoneNumber.trim()
+        val cleanName = callerName.trim()
+        val cleanReason = reason.trim().ifBlank { "Blocked by user" }
+
+        val id = blockedNumberDao.insertBlockedNumber(
+            BlockedNumberEntity(
+                phoneNumber = cleanPhone,
+                callerName = cleanName,
+                reason = cleanReason,
+                blockedAt = System.currentTimeMillis(),
+                blockCount = 0
+            )
+        )
+
+        // Also add or keep in sync with RuleEntity for defense in depth
+        ruleDao.insertRule(
+            RuleEntity(
+                matchType = RuleMatchType.EXACT_NUMBER,
+                pattern = cleanPhone,
+                action = CallAction.BLOCK,
+                priority = 20,
+                note = "Blocked: $cleanName ($cleanReason)"
+            )
+        )
+        id
+    }
+
+    suspend fun removeBlockedNumber(id: Long) = withContext(Dispatchers.IO) {
+        blockedNumberDao.deleteBlockedNumber(id)
+    }
+
+    suspend fun removeBlockedNumberByPhone(phoneNumber: String) = withContext(Dispatchers.IO) {
+        blockedNumberDao.deleteBlockedNumberByPhone(phoneNumber.trim())
+    }
+
+    suspend fun isNumberBlocked(phoneNumber: String): Boolean = withContext(Dispatchers.IO) {
+        blockedNumberDao.getBlockedNumberSync(phoneNumber.trim()) != null
+    }
+
+    suspend fun testInterceptCall(incomingNumber: String, callerName: String = ""): InterceptionDecision = withContext(Dispatchers.IO) {
+        blockedCallInterceptor.interceptCall(
+            incomingNumber = incomingNumber,
+            callerName = callerName,
+            shouldLogCall = true,
+            notifyUser = true,
+            context = context
+        )
     }
 
     /**
@@ -297,7 +371,47 @@ class CallShieldRepository(
         )
         defaultAllowlist.forEach { allowlistDao.insertAllowlist(it) }
 
-        // 3. Seed Primary Showcase Calls (with transcripts and indicators)
+        // 3. Seed Blocked Numbers Room Table
+        val defaultBlocked = listOf(
+            BlockedNumberEntity(
+                phoneNumber = "+1 800-555-0199",
+                callerName = "National Credit Robocall",
+                reason = "Automated Debt Relief Phishing",
+                blockedAt = now - 5 * oneDay,
+                blockCount = 14
+            ),
+            BlockedNumberEntity(
+                phoneNumber = "+1 888-999-1234",
+                callerName = "Fake Tech Support",
+                reason = "AnyDesk Remote Access Phishing",
+                blockedAt = now - 4 * oneDay,
+                blockCount = 9
+            ),
+            BlockedNumberEntity(
+                phoneNumber = "+91 98765 99001",
+                callerName = "Bank Impersonation",
+                reason = "Demanding 6-Digit OTP & CVV",
+                blockedAt = now - 2 * oneDay,
+                blockCount = 6
+            ),
+            BlockedNumberEntity(
+                phoneNumber = "+1 202-555-0188",
+                callerName = "IRS Arrest Extortion",
+                reason = "Fake Federal Law Enforcement Warrant",
+                blockedAt = now - 1 * oneDay,
+                blockCount = 18
+            ),
+            BlockedNumberEntity(
+                phoneNumber = "+91 91140 88231",
+                callerName = "Prime Investment Spam",
+                reason = "Persistent Crypto Stock Telemarketing",
+                blockedAt = now - 12 * oneHour,
+                blockCount = 4
+            )
+        )
+        blockedNumberDao.insertAllBlockedNumbers(defaultBlocked)
+
+        // 4. Seed Primary Showcase Calls (with transcripts and indicators)
         val abcFinanceCallId = callDao.insertCall(
             CallEntity(
                 phoneNumber = "+91 91140 12345",
@@ -307,6 +421,8 @@ class CallShieldRepository(
                 action = CallAction.BLOCK,
                 category = CallCategory.LOANS,
                 riskLevel = RiskLevel.LOW,
+                direction = CallDirection.BLOCKED,
+                threatScore = 52,
                 confidenceScore = 0.94f,
                 purpose = "Personal Loan Offer",
                 summary = "Caller offered pre-approved personal loan at 10.5% interest and requested callback for verification.",
@@ -348,6 +464,8 @@ class CallShieldRepository(
                 action = CallAction.AI_SCREEN,
                 category = CallCategory.POTENTIAL_SCAM,
                 riskLevel = RiskLevel.HIGH,
+                direction = CallDirection.AI_SCREENED,
+                threatScore = 96,
                 confidenceScore = 0.98f,
                 purpose = "Fake Bank Account Suspension & OTP Request",
                 summary = "Caller claimed subscriber's bank account was frozen and demanded immediate one-time password (OTP) verification. CallShield AI refused credential release and ended call.",
@@ -377,6 +495,8 @@ class CallShieldRepository(
                 action = CallAction.ALLOW,
                 category = CallCategory.CUSTOMER_SERVICE,
                 riskLevel = RiskLevel.LOW,
+                direction = CallDirection.INCOMING,
+                threatScore = 12,
                 confidenceScore = 0.91f,
                 purpose = "Broadband Service Maintenance Notice",
                 summary = "Fiber maintenance notification for local network scheduled for midnight tonight.",
@@ -511,5 +631,80 @@ class CallShieldRepository(
             CommunityReportEntity(phoneNumber = "+91 140 556677", category = CallCategory.TELEMARKETING, reportCount = 89, topTags = "Real Estate, Sales Spammer")
         )
         communityReports.forEach { communityReportDao.insertOrUpdate(it) }
+
+        // Seed Call History Logs Room Table (including phone numbers, timestamps, and AI-generated screening summaries)
+        val initialHistoryLogs = listOf(
+            CallHistoryLogEntity(
+                phoneNumber = "+91 91140 12345",
+                callerName = "ABC Finance",
+                timestamp = now - 25 * 60 * 1000L,
+                durationSeconds = 42,
+                actionTaken = "BLOCKED",
+                riskLevel = "LOW",
+                category = "LOANS",
+                threatScore = 52,
+                aiScreeningSummary = "Caller offered pre-approved personal loan at 10.5% interest and requested callback for verification. CallShield AI identified commercial loan solicitation and terminated without exposing subscriber data.",
+                detectedKeywords = "Loan, Interest rate, Callback verification",
+                isBlocked = true,
+                wasLiftedByAI = true
+            ),
+            CallHistoryLogEntity(
+                phoneNumber = "+1 800-555-0199",
+                callerName = "National Credit Dept",
+                timestamp = now - 2 * oneHour,
+                durationSeconds = 18,
+                actionTaken = "BLOCKED",
+                riskLevel = "HIGH",
+                category = "SPAM",
+                threatScore = 95,
+                aiScreeningSummary = "Automated VoIP robocaller detected. Matched high-risk prefix rule and dropped immediately. No subscriber interaction permitted.",
+                detectedKeywords = "Robocall, Toll-free spoofing, Debt relief",
+                isBlocked = true,
+                wasLiftedByAI = false
+            ),
+            CallHistoryLogEntity(
+                phoneNumber = "+1 415-555-8821",
+                callerName = "Express Courier Dispatch",
+                timestamp = now - 5 * oneHour,
+                durationSeconds = 42,
+                actionTaken = "ALLOWED",
+                riskLevel = "LOW",
+                category = "LEGITIMATE",
+                threatScore = 8,
+                aiScreeningSummary = "Legitimate delivery driver confirming gate code for parcel drop-off. Verified safe caller; passed through to subscriber.",
+                detectedKeywords = "Package delivery, Gate code, Logistics",
+                isBlocked = false,
+                wasLiftedByAI = true
+            ),
+            CallHistoryLogEntity(
+                phoneNumber = "+1 888-999-1234",
+                callerName = "Suspicious Tech Support",
+                timestamp = now - 24 * oneHour,
+                durationSeconds = 45,
+                actionTaken = "BLOCKED",
+                riskLevel = "CRITICAL",
+                category = "POTENTIAL_SCAM",
+                threatScore = 98,
+                aiScreeningSummary = "Caller claimed computer had malicious virus and demanded AnyDesk remote access. AI identified high-risk social engineering scam and terminated connection.",
+                detectedKeywords = "AnyDesk, Remote access, Virus alert, Bank credentials",
+                isBlocked = true,
+                wasLiftedByAI = true
+            ),
+            CallHistoryLogEntity(
+                phoneNumber = "+91 98765 43210",
+                callerName = "Bank Fraud Alert (Impersonation)",
+                timestamp = now - 48 * oneHour,
+                durationSeconds = 35,
+                actionTaken = "BLOCKED",
+                riskLevel = "CRITICAL",
+                category = "FRAUD",
+                threatScore = 99,
+                aiScreeningSummary = "Impersonator claimed to be from bank security department asking to verify credit card OTP. AI blocked call immediately and added number to firewall blocklist.",
+                detectedKeywords = "OTP, CVV, Card expiry, Security department",
+                isBlocked = true,
+                wasLiftedByAI = true
+            )
+        )
+        initialHistoryLogs.forEach { callHistoryLogDao.insertLog(it) }
     }
 }

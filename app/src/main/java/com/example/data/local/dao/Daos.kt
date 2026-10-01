@@ -6,6 +6,7 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Update
 import com.example.data.local.entity.AllowlistEntity
+import com.example.data.local.entity.BlockedNumberEntity
 import com.example.data.local.entity.CallEntity
 import com.example.data.local.entity.CallerMemoryEntity
 import com.example.data.local.entity.CommunityReportEntity
@@ -49,6 +50,9 @@ interface CallDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertCall(call: CallEntity): Long
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAllCalls(calls: List<CallEntity>): List<Long>
 
     @Update
     suspend fun updateCall(call: CallEntity)
@@ -163,4 +167,37 @@ interface CommunityReportDao {
 
     @Query("SELECT * FROM community_reports ORDER BY reportCount DESC")
     fun getAllReports(): Flow<List<CommunityReportEntity>>
+}
+
+@Dao
+interface BlockedNumberDao {
+    @Query("SELECT * FROM blocked_numbers ORDER BY blockedAt DESC")
+    fun getAllBlockedNumbers(): Flow<List<BlockedNumberEntity>>
+
+    @Query("SELECT * FROM blocked_numbers ORDER BY blockedAt DESC")
+    suspend fun getAllBlockedNumbersSync(): List<BlockedNumberEntity>
+
+    @Query("SELECT * FROM blocked_numbers WHERE phoneNumber = :phoneNumber LIMIT 1")
+    fun getBlockedNumber(phoneNumber: String): Flow<BlockedNumberEntity?>
+
+    @Query("SELECT * FROM blocked_numbers WHERE phoneNumber = :phoneNumber LIMIT 1")
+    suspend fun getBlockedNumberSync(phoneNumber: String): BlockedNumberEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertBlockedNumber(entry: BlockedNumberEntity): Long
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAllBlockedNumbers(entries: List<BlockedNumberEntity>): List<Long>
+
+    @Query("DELETE FROM blocked_numbers WHERE id = :id")
+    suspend fun deleteBlockedNumber(id: Long)
+
+    @Query("DELETE FROM blocked_numbers WHERE phoneNumber = :phoneNumber")
+    suspend fun deleteBlockedNumberByPhone(phoneNumber: String)
+
+    @Query("UPDATE blocked_numbers SET blockCount = blockCount + 1 WHERE id = :id")
+    suspend fun incrementBlockCount(id: Long)
+
+    @Query("DELETE FROM blocked_numbers")
+    suspend fun clearAllBlockedNumbers()
 }
